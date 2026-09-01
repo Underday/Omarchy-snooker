@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Resolve World Snooker Tour records to snooker.org page IDs.
+
+wst.tv is a single-page app that serves the same shell for every route, so its
+`/players/<slug>` links cannot be verified and often land on the wrong page.
+snooker.org is server-rendered and has stable numeric IDs, but it keys on its
+own IDs rather than the WST UUIDs — so events are matched on their dates and
+players on their names.
+"""
+
+import html
+import re
+import unicodedata
+
+SITE = "https://www.snooker.org"
+OPTION = re.compile(r'<option value="(\d+)">([^<]{1,96})</option>')
+ROW = re.compile(r"<tr.*?</tr>", re.S)
+CELL = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S)
+EVENT_ID = re.compile(r'href="[^"]*?(?:event=|/event/)(\d+)"')
+ISO_DAY = re.compile(r"\A\d{4}\.\d{2}\.\d{2}\Z")
+TAG = re.compile(r"<[^>]+>")
+SPACE = re.compile(r"\s+")
+DROP = re.compile(r"[.'’`]")
+TRANSLIT = {"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "å": "aa", "æ": "ae", "ø": "oe"}
+
+
+def season_url(season):
+    return f"{SITE}/res/index.asp?season={int(season)}"
+
+
+def event_url(event_id):
+    return f"{SITE}/event/{int(event_id)}"
+
+
+def player_url(player_id):
+    return f"{SITE}/res/index.asp?player={int(player_id)}"
+
+
+def _clean(text):
+    return SPACE.sub(" ", DROP.sub("", str(text or "")).strip().lower())
+
+
+def fold(name):
+    """Diacritics removed: 'Nüßle' and 'Nussle' land on the same key."""
+    text = _clean(name).replace("ß", "ss")
+    stripped = unicodedata.normalize("NFKD", text)
+    return SPACE.sub(" ", "".join(c for c in stripped if not unicodedata.combining(c))).strip()
+
+
+def translit(name):
+    """German-style spelling out: 'Nüßle' becomes 'nuessle', as WST writes it."""
+    text = _clean(name)
+    return SPACE.sub(" ", "".join(TRANSLIT.get(c, c) for c in text)).strip()
+
+
+def initials_dropped(name):
+    """'Mark J Williams' and 'Mark Williams' share a key; '(1967)' does not."""
+    parts = fold(name).split()
+    if len(parts) < 3:
+        return ""
+    kept = [parts[0]] + [p for p in parts[1:-1] if len(p) > 1] + [parts[-1]]
+    return " ".join(kept)
+
+
+def parse_players(markup):
+    """Name lookup tiers built from the player picker on players.snooker.org."""
+    tiers = [{}, {}, {}]
+    seen = [{}, {}, {}]
+    for player_id, raw in OPTION.findall(markup or ""):
+        name = html.unescape(raw).strip()
+        if not name or name.lower().startswith("zzz"):
+            continue
+        for index, key in enumerate((fold(name), translit(name), initials_dropped(name))):
+            if not key:
+                continue
+            # A key claimed by two different players can never be resolved safely.
+            if key in seen[index] and seen[index][key] != player_id:
+                tiers[index][key] = None
+            else:
+                seen[index][key] = player_id
+                tiers[index].setdefault(key, player_id)
+    return tiers
+
+
+def lookup_player(tiers, name):
+    key_fold = fold(name)
+    if not key_fold:
+        return ""
+    # Tier 2 is indexed with initials already dropped, so a query that carries
+    # none ("Mark Williams") still has to be looked up there by its plain key.
+    attempts = (
+        (0, key_fold),
+        (1, translit(name)),
+        (2, key_fold),
+        (2, initials_dropped(name)),
+    )
+    for index, key in attempts:
+        if not key:
+            continue
+        found = tiers[index].get(key)
+        if found:
+            return player_url(found)
+    return ""
+
+
+def parse_events(markup):
+    """(start, end, id) for every event in a snooker.org season calendar."""
+    events = []
+    for row in ROW.findall(markup or ""):
+        match = EVENT_ID.search(row)
+        if not match:
+            continue
+        cells = [SPACE.sub(" ", TAG.sub(" ", cell)).strip() for cell in CELL.findall(row)]
+        days = [c.replace(".", "-") for c in cells if ISO_DAY.match(c)]
+        if len(days) >= 2:
+            events.append((days[0], days[1], match.group(1)))
+    return events
+
+
+def lookup_event(events, start, end, season):
+    if not start or not end:
+        return season_url(season)
+    for event_start, event_end, event_id in events:
+        if event_start == start and event_end == end:
+            return event_url(event_id)
+    # Sub-stages of a long event (Championship League) sit inside one entry.
+    for event_start, event_end, event_id in events:
+        if event_start <= start and end <= event_end:
+            return event_url(event_id)
+    return season_url(season)

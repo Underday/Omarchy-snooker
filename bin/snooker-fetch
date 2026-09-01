@@ -39,13 +39,36 @@ get() {
 tournaments_url="https://tournaments.snooker.web.gc.wstservices.co.uk/v2/?season=${season}"
 matches_url="https://matches.snooker.web.gc.wstservices.co.uk/v2/"
 
+# snooker.org supplies the page IDs the widget links to. Its player roster and
+# season calendar move far more slowly than scores, so they get their own long
+# cache and a failure here only costs links, never the calendar itself.
+players_cache="${cache_root}/players.html"
+calendar_cache="${cache_root}/calendar-${season}.html"
+stale() { [[ ! -s "$1" ]] || [[ -n "$(find "$1" -maxdepth 0 -mmin "+$2" 2>/dev/null)" ]]; }
+
+if stale "$players_cache" 10080; then
+  get "https://players.snooker.org/" $((2 * 1024 * 1024)) >"${work_dir}/players.html" \
+    && [[ -s "${work_dir}/players.html" ]] && mv -- "${work_dir}/players.html" "$players_cache"
+fi
+if stale "$calendar_cache" 720; then
+  get "https://www.snooker.org/res/index.asp?template=2&season=${season}" $((1024 * 1024)) >"${work_dir}/calendar.html" \
+    && [[ -s "${work_dir}/calendar.html" ]] && mv -- "${work_dir}/calendar.html" "$calendar_cache"
+fi
+
 if get "$tournaments_url" $((256 * 1024)) >"${work_dir}/tournaments.json" \
   && get "$matches_url" $((1024 * 1024)) >"${work_dir}/matches.json" \
-  && "$builder" "${work_dir}/tournaments.json" "${work_dir}/matches.json" --today "$today" >"${work_dir}/payload.json" \
+  && "$builder" "${work_dir}/tournaments.json" "${work_dir}/matches.json" \
+       --today "$today" --season "$season" \
+       --players "$players_cache" --calendar "$calendar_cache" >"${work_dir}/payload.json" \
   && "$cache_reader" --check "${work_dir}/payload.json"; then
   mv -- "${work_dir}/payload.json" "$cache_file"
+  rm -rf "$work_dir"
+  trap - EXIT
   exec "$cache_reader" "$cache_file"
 fi
+
+rm -rf "$work_dir"
+trap - EXIT
 
 if "$cache_reader" --check "$cache_file"; then
   printf '%s\n' "Network refresh failed; showing the cached calendar" >&2

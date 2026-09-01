@@ -277,9 +277,19 @@ Panel {
                 Layout.fillWidth: true
                 Layout.preferredHeight: frameText.text ? Style.space(72) : Style.space(52)
                 radius: Style.cornerRadius
-                color: Qt.rgba(0.18, 0.64, 0.42, 0.12)
+                color: liveCard.containsMouse ? Qt.rgba(0.18, 0.64, 0.42, 0.20) : Qt.rgba(0.18, 0.64, 0.42, 0.12)
                 border.width: 1
                 border.color: Qt.rgba(0.18, 0.64, 0.42, 0.45)
+
+                // Declared first so the player-name areas layer above it.
+                MouseArea {
+                  id: liveCard
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  acceptedButtons: Qt.LeftButton
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openLink(root.schedule.current ? root.schedule.current.url : "")
+                }
 
                 ColumnLayout {
                   anchors.fill: parent
@@ -381,7 +391,18 @@ Panel {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Style.space(38)
                 radius: Style.cornerRadius
-                color: Qt.rgba(1, 1, 1, 0.035)
+                color: todayRow.containsMouse ? Qt.rgba(1, 1, 1, 0.075) : Qt.rgba(1, 1, 1, 0.035)
+
+                // Declared first so the player-name areas layer above it.
+                MouseArea {
+                  id: todayRow
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  acceptedButtons: Qt.LeftButton
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openLink(root.schedule.current ? root.schedule.current.url : "")
+                }
+
                 RowLayout {
                   anchors.fill: parent; anchors.leftMargin: Style.space(12); anchors.rightMargin: Style.space(12)
                   spacing: Style.space(10)
@@ -596,7 +617,7 @@ Panel {
             Layout.fillWidth: true
             Text {
               textFormat: Text.PlainText
-              text: "Local times · Click a player or event to open wst.tv"
+              text: "Local times · Click a player or match to open snooker.org"
               color: Qt.darker(root.bar.foreground, 1.6); font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
             }
             Item { Layout.fillWidth: true }

@@ -7,14 +7,19 @@ to happen here rather than in the request.
 
 import argparse
 import datetime
+import importlib.machinery
+import importlib.util
 import json
+import os
 import sys
+
+_loader = importlib.machinery.SourceFileLoader(
+    "snooker_links", os.path.join(os.path.dirname(os.path.abspath(__file__)), "snooker-links"))
+links = importlib.util.module_from_spec(importlib.util.spec_from_loader("snooker_links", _loader))
+_loader.exec_module(links)
 
 MAX_UPCOMING_TOURNAMENTS = 6
 MAX_MATCHES = 40
-SITE = "https://www.wst.tv"
-TOURNAMENTS_PAGE = SITE + "/tournaments"
-SLUG_SAFE = set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
 
 def player_name(player):
@@ -25,26 +30,14 @@ def player_name(player):
     return " ".join(part for part in (str(first).strip(), str(last).strip()) if part)[:48]
 
 
-def player_url(player):
-    """Player profile page, or nothing when the slug is missing or unsafe."""
-    if not isinstance(player, dict):
+def read_optional(path):
+    if not path:
         return ""
-    slug = str(player.get("playerSlug") or "").strip().lower()
-    if not slug or len(slug) > 64 or not set(slug) <= SLUG_SAFE:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError:
         return ""
-    return f"{SITE}/players/{slug}"
-
-
-def tournament_url(value):
-    """`informationPage` arrives absolute, root-relative, or bare — and often null."""
-    text = str(value or "").strip()
-    if not text:
-        return TOURNAMENTS_PAGE
-    if text.startswith("https://"):
-        return text[:256]
-    if text.startswith("http://") or "//" in text:
-        return TOURNAMENTS_PAGE
-    return f"{SITE}/{text.lstrip('/')}"[:256]
 
 
 def as_utc(value):
@@ -59,7 +52,7 @@ def as_utc(value):
     return parsed.replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def tournament_view(attributes, identifier):
+def tournament_view(attributes, identifier, events, season):
     return {
         "id": str(identifier or "")[:64],
         "name": str(attributes.get("name") or "")[:96],
@@ -67,7 +60,8 @@ def tournament_view(attributes, identifier):
         "country": str(attributes.get("country") or "").strip()[:64],
         "startDate": str(attributes.get("startDate") or "")[:10],
         "endDate": str(attributes.get("endDate") or "")[:10],
-        "url": tournament_url(attributes.get("informationPage")),
+        "url": links.lookup_event(events, str(attributes.get("startDate") or "")[:10],
+                                  str(attributes.get("endDate") or "")[:10], season),
     }
 
 
@@ -83,6 +77,9 @@ def main() -> int:
     parser.add_argument("tournaments")
     parser.add_argument("matches")
     parser.add_argument("--today", default="")
+    parser.add_argument("--season", type=int, default=0)
+    parser.add_argument("--players", default="")
+    parser.add_argument("--calendar", default="")
     args = parser.parse_args()
 
     try:
@@ -97,11 +94,16 @@ def main() -> int:
         return 1
 
     today = args.today or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    season = args.season or int(today[:4])
+
+    # Missing or unreadable link sources simply mean fewer links, never a failure.
+    tiers = links.parse_players(read_optional(args.players))
+    events = links.parse_events(read_optional(args.calendar))
 
     views = []
     for item in tournaments:
         attributes = item.get("attributes") or {}
-        view = tournament_view(attributes, item.get("id"))
+        view = tournament_view(attributes, item.get("id"), events, season)
         if view["startDate"] and view["endDate"]:
             views.append(view)
     views.sort(key=lambda view: view["startDate"])
@@ -131,8 +133,8 @@ def main() -> int:
             "bestOf": max(0, min(99, int(attributes.get("numberOfFrames") or 0))),
             "home": player_name(attributes.get("homePlayer")),
             "away": player_name(attributes.get("awayPlayer")),
-            "homeUrl": player_url(attributes.get("homePlayer")),
-            "awayUrl": player_url(attributes.get("awayPlayer")),
+            "homeUrl": links.lookup_player(tiers, player_name(attributes.get("homePlayer"))),
+            "awayUrl": links.lookup_player(tiers, player_name(attributes.get("awayPlayer"))),
             "homeScore": max(0, min(99, int(attributes.get("homePlayerScore") or 0))),
             "awayScore": max(0, min(99, int(attributes.get("awayPlayerScore") or 0))),
         })

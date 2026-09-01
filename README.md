@@ -59,14 +59,27 @@ endpoints that [wst.tv](https://www.wst.tv) itself reads:
 | `tournaments.snooker.web.gc.wstservices.co.uk/v2/?season=YYYY` | Season calendar |
 | `matches.snooker.web.gc.wstservices.co.uk/v2/` | Order of play and results |
 | `snooker.graph.gc.wstservices.co.uk/graphql` | Live frame scores |
+| `players.snooker.org` | Player IDs for profile links (cached 7 days) |
+| `www.snooker.org/res/index.asp?template=2&season=YYYY` | Event IDs for links (cached 12 hours) |
 
 The match feed ignores query filters and returns roughly 300 KB covering several
 tournaments, so `bin/snooker-build` reduces it to the running event before
 anything is cached — about 12 KB on disk. Live scores are requested for every
 in-play match in one batched GraphQL call.
 
+Clicking a tournament, match, or player name opens the matching page on
+snooker.org. wst.tv is a single-page app that returns the same shell for every
+route — including routes that do not exist — so its links cannot be verified and
+are not used. snooker.org is server-rendered with stable numeric IDs, but keys on
+its own IDs rather than the WST UUIDs, so `bin/snooker-links` matches events on
+their dates and players on their names. Name matching runs in tiers: exact, then
+a diacritic fold (`Nüßle` / `Nuessle`), then dropping middle initials
+(`Mark J Williams` / `Mark Williams`). A name that stays ambiguous gets no link
+rather than a wrong one.
+
 If a refresh fails, the previous cached calendar continues to be shown
-regardless of its age.
+regardless of its age. If only the snooker.org sources fail, the calendar still
+works and links fall back to the season page.
 
 A World Snooker Tour season runs from June to May and is named for its opening
 year, which is how `bin/snooker-fetch` picks the season to request.
