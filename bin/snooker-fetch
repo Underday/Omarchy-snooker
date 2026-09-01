@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+force="${1:-}"
+refresh_hours="${2:-6}"
+
+case "$refresh_hours" in (*[!0-9]*|'') refresh_hours=6;; esac
+(( refresh_hours < 3 )) && refresh_hours=3
+
+# A World Snooker Tour season runs June through May, so it is named for its
+# opening calendar year.
+year="$(date -u +%Y)"
+month="$(date -u +%m)"
+season="$year"
+(( 10#$month < 6 )) && season=$(( year - 1 ))
+today="$(date -u +%F)"
+
+here="$(dirname "$0")"
+cache_root="${XDG_CACHE_HOME:-${HOME}/.cache}/omarchy/snooker-calendar"
+cache_file="${cache_root}/${season}.json"
+cache_reader="${here}/snooker-cache-read"
+builder="${here}/snooker-build"
+max_age=$((refresh_hours * 3600))
+mkdir -p "$cache_root"
+
+if [[ "$force" != "--force" ]] && "$cache_reader" --max-age "$max_age" "$cache_file"; then
+  exit 0
+fi
+
+work_dir="$(mktemp -d "${cache_root}/build.XXXXXX")"
+trap 'rm -rf "$work_dir"' EXIT
+
+agent="omarchy-snooker-calendar/1.0 (schedule widget; one refresh per ${refresh_hours}h)"
+get() {
+  curl -fsSL --compressed --connect-timeout 5 --max-time 20 \
+    --max-filesize "$2" --retry 1 --retry-delay 2 -A "$agent" "$1"
+}
+
+tournaments_url="https://tournaments.snooker.web.gc.wstservices.co.uk/v2/?season=${season}"
+matches_url="https://matches.snooker.web.gc.wstservices.co.uk/v2/"
+
+if get "$tournaments_url" $((256 * 1024)) >"${work_dir}/tournaments.json" \
+  && get "$matches_url" $((1024 * 1024)) >"${work_dir}/matches.json" \
+  && "$builder" "${work_dir}/tournaments.json" "${work_dir}/matches.json" --today "$today" >"${work_dir}/payload.json" \
+  && "$cache_reader" --check "${work_dir}/payload.json"; then
+  mv -- "${work_dir}/payload.json" "$cache_file"
+  exec "$cache_reader" "$cache_file"
+fi
+
+if "$cache_reader" --check "$cache_file"; then
+  printf '%s\n' "Network refresh failed; showing the cached calendar" >&2
+  exec "$cache_reader" "$cache_file"
+fi
+
+printf '%s\n' "Unable to download the snooker calendar" >&2
+exit 1

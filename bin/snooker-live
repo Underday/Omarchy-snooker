@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Fetch live frame state for the given match IDs in a single batched query."""
+
+import json
+import re
+import sys
+import urllib.error
+import urllib.request
+
+ENDPOINT = "https://snooker.graph.gc.wstservices.co.uk/graphql"
+UUID = re.compile(r"\A[0-9a-fA-F-]{36}\Z")
+MAX_MATCHES = 8
+MAX_BYTES = 128 * 1024
+FIELDS = (
+    "{ matchHistory { frames { homePlayerPoints awayPlayerPoints } } "
+    "homePlayerFrames awayPlayerFrames status statusMeta }"
+)
+
+
+def main() -> int:
+    ids = [value for value in sys.argv[1:] if UUID.match(value)][:MAX_MATCHES]
+    if not ids:
+        json.dump({}, sys.stdout)
+        return 0
+
+    aliases = " ".join(
+        f'm{index}: matchStatus(matchId: "{match_id}") {FIELDS}'
+        for index, match_id in enumerate(ids)
+    )
+    body = json.dumps({"query": "query { " + aliases + " }"}).encode("utf-8")
+    request = urllib.request.Request(
+        ENDPOINT,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "omarchy-snooker-calendar/1.0 (live scores)",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            payload = json.loads(response.read(MAX_BYTES + 1).decode("utf-8", "replace"))
+    except (urllib.error.URLError, ValueError, OSError) as error:
+        print(f"live scores unavailable: {error}", file=sys.stderr)
+        return 1
+
+    data = payload.get("data") or {}
+    result = {}
+    for index, match_id in enumerate(ids):
+        status = data.get(f"m{index}")
+        if not isinstance(status, dict):
+            continue
+        history = (status.get("matchHistory") or {}).get("frames") or []
+        result[match_id] = {
+            "home": max(0, min(99, int(status.get("homePlayerFrames") or 0))),
+            "away": max(0, min(99, int(status.get("awayPlayerFrames") or 0))),
+            "status": str(status.get("status") or "")[:24],
+            "meta": str(status.get("statusMeta") or "")[:24],
+            "frames": [
+                {
+                    "h": max(0, min(999, int(frame.get("homePlayerPoints") or 0))),
+                    "a": max(0, min(999, int(frame.get("awayPlayerPoints") or 0))),
+                }
+                for frame in history[-20:]
+                if isinstance(frame, dict)
+            ],
+        }
+
+    json.dump(result, sys.stdout, separators=(",", ":"))
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

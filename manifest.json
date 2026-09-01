@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "underday.snooker-calendar",
+  "name": "Snooker Calendar",
+  "version": "1.0.0",
+  "author": "underday",
+  "license": "MIT",
+  "description": "The current World Snooker Tour event with live frame scores, today's matches, and the tournaments that follow.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Snooker Calendar",
+    "description": "Live snooker scores, today's matches, and the upcoming World Snooker Tour calendar.",
+    "category": "Info",
+    "aliases": ["snooker", "wst", "cue-sports", "billiards"],
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "refreshHours": 6,
+      "liveSeconds": 45
+    },
+    "schema": [
+      {
+        "key": "refreshHours",
+        "type": "integer",
+        "label": "Calendar refresh interval (hours)",
+        "min": 3,
+        "max": 24,
+        "step": 1,
+        "defaultValue": 6
+      },
+      {
+        "key": "liveSeconds",
+        "type": "integer",
+        "label": "Live score refresh while the panel is open (seconds)",
+        "min": 20,
+        "max": 300,
+        "step": 5,
+        "defaultValue": 45
+      }
+    ]
+  }
+}

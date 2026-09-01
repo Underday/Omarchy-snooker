@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Reduce the raw World Snooker Tour feeds to the compact payload the widget reads.
+
+The upstream match feed is ~300 KB and ignores query filters, so the slimming has
+to happen here rather than in the request.
+"""
+
+import argparse
+import datetime
+import json
+import sys
+
+MAX_UPCOMING_TOURNAMENTS = 6
+MAX_MATCHES = 40
+
+
+def player_name(player):
+    if not isinstance(player, dict):
+        return ""
+    first = player.get("customFirstName") or player.get("firstName") or ""
+    last = player.get("customSurname") or player.get("surname") or ""
+    return " ".join(part for part in (str(first).strip(), str(last).strip()) if part)[:48]
+
+
+def as_utc(value):
+    """The feed stamps naive UTC (`2026-09-01 12:00:00`); make that explicit."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def tournament_view(attributes, identifier):
+    return {
+        "id": str(identifier or "")[:64],
+        "name": str(attributes.get("name") or "")[:96],
+        "city": str(attributes.get("city") or "").strip()[:64],
+        "country": str(attributes.get("country") or "").strip()[:64],
+        "startDate": str(attributes.get("startDate") or "")[:10],
+        "endDate": str(attributes.get("endDate") or "")[:10],
+    }
+
+
+def load(path):
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    data = payload.get("data")
+    return data if isinstance(data, list) else []
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("tournaments")
+    parser.add_argument("matches")
+    parser.add_argument("--today", default="")
+    args = parser.parse_args()
+
+    try:
+        tournaments = load(args.tournaments)
+        matches = load(args.matches)
+    except (OSError, ValueError) as error:
+        print(f"could not read the snooker feeds: {error}", file=sys.stderr)
+        return 1
+
+    if not tournaments:
+        print("the tournament feed held no events", file=sys.stderr)
+        return 1
+
+    today = args.today or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+    views = []
+    for item in tournaments:
+        attributes = item.get("attributes") or {}
+        view = tournament_view(attributes, item.get("id"))
+        if view["startDate"] and view["endDate"]:
+            views.append(view)
+    views.sort(key=lambda view: view["startDate"])
+
+    running = [view for view in views if view["startDate"] <= today <= view["endDate"]]
+    later = [view for view in views if view["startDate"] > today]
+    current = running[0] if running else (later[0] if later else None)
+    if current is None:
+        print("the season has finished", file=sys.stderr)
+        return 1
+
+    upcoming = [view for view in later if view["id"] != current["id"]][:MAX_UPCOMING_TOURNAMENTS]
+
+    slim_matches = []
+    for item in matches:
+        attributes = item.get("attributes") or {}
+        if (attributes.get("tournamentID") or "") != current["id"]:
+            continue
+        start = as_utc(attributes.get("startDateTime"))
+        status = str(attributes.get("status") or "")[:24]
+        slim_matches.append({
+            "id": str(item.get("id") or "")[:64],
+            "round": str(attributes.get("round") or "")[:48],
+            "start": start,
+            "status": status,
+            "live": status.lower() == "live",
+            "bestOf": max(0, min(99, int(attributes.get("numberOfFrames") or 0))),
+            "home": player_name(attributes.get("homePlayer")),
+            "away": player_name(attributes.get("awayPlayer")),
+            "homeScore": max(0, min(99, int(attributes.get("homePlayerScore") or 0))),
+            "awayScore": max(0, min(99, int(attributes.get("awayPlayerScore") or 0))),
+        })
+
+    # Live first, then what is still to come, and finally the most recent results
+    # so a finished session still reads as context rather than crowding the list.
+    def is_ahead(match):
+        return not match["start"] or match["start"][:10] >= today
+
+    live = [match for match in slim_matches if match["live"]]
+    ahead = [match for match in slim_matches if not match["live"] and is_ahead(match)]
+    done = [match for match in slim_matches if not match["live"] and not is_ahead(match)]
+    live.sort(key=lambda match: match["start"] or "9999")
+    ahead.sort(key=lambda match: match["start"] or "9999")
+    done.sort(key=lambda match: match["start"] or "", reverse=True)
+    slim_matches = (live + ahead)[:MAX_MATCHES]
+    slim_matches += done[:max(0, MAX_MATCHES - len(slim_matches))]
+
+    json.dump({
+        "generated": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "current": current,
+        "upcoming": upcoming,
+        "matches": slim_matches,
+    }, sys.stdout, separators=(",", ":"))
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
