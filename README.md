@@ -18,7 +18,7 @@ your local zone.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/<you>/omarchy-snooker.git --enable
+omarchy plugin add https://github.com/Underday/Omarchy-snooker.git --enable
 ```
 
 Or from a local checkout:
