@@ -3,6 +3,15 @@ function boundedText(value, maxLength) {
   return text.length > maxLength ? text.slice(0, maxLength) : text
 }
 
+function safeUrl(value) {
+  // Everything here ends up in Qt.openUrlExternally, so only plain https passes.
+  var text = String(value === undefined || value === null ? "" : value)
+  if (text.length > 256) return ""
+  if (text.indexOf("https://") !== 0) return ""
+  if (text.indexOf("\n") >= 0 || text.indexOf(" ") >= 0) return ""
+  return text
+}
+
 function asDate(value) {
   if (!value) return null
   var parsed = new Date(String(value))
@@ -22,7 +31,8 @@ function normalizeTournament(raw) {
     city: boundedText(raw.city, 64),
     country: boundedText(raw.country, 64),
     start: start,
-    end: end
+    end: end,
+    url: safeUrl(raw.url)
   }
 }
 
@@ -40,6 +50,8 @@ function normalizeMatch(raw) {
     bestOf: Math.max(0, Math.min(99, Number(raw.bestOf || 0) || 0)),
     home: home || "TBD",
     away: away || "TBD",
+    homeUrl: safeUrl(raw.homeUrl),
+    awayUrl: safeUrl(raw.awayUrl),
     homeScore: Math.max(0, Math.min(99, Number(raw.homeScore || 0) || 0)),
     awayScore: Math.max(0, Math.min(99, Number(raw.awayScore || 0) || 0)),
     frames: []

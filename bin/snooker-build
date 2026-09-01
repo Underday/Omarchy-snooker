@@ -12,6 +12,9 @@ import sys
 
 MAX_UPCOMING_TOURNAMENTS = 6
 MAX_MATCHES = 40
+SITE = "https://www.wst.tv"
+TOURNAMENTS_PAGE = SITE + "/tournaments"
+SLUG_SAFE = set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
 
 def player_name(player):
@@ -20,6 +23,28 @@ def player_name(player):
     first = player.get("customFirstName") or player.get("firstName") or ""
     last = player.get("customSurname") or player.get("surname") or ""
     return " ".join(part for part in (str(first).strip(), str(last).strip()) if part)[:48]
+
+
+def player_url(player):
+    """Player profile page, or nothing when the slug is missing or unsafe."""
+    if not isinstance(player, dict):
+        return ""
+    slug = str(player.get("playerSlug") or "").strip().lower()
+    if not slug or len(slug) > 64 or not set(slug) <= SLUG_SAFE:
+        return ""
+    return f"{SITE}/players/{slug}"
+
+
+def tournament_url(value):
+    """`informationPage` arrives absolute, root-relative, or bare — and often null."""
+    text = str(value or "").strip()
+    if not text:
+        return TOURNAMENTS_PAGE
+    if text.startswith("https://"):
+        return text[:256]
+    if text.startswith("http://") or "//" in text:
+        return TOURNAMENTS_PAGE
+    return f"{SITE}/{text.lstrip('/')}"[:256]
 
 
 def as_utc(value):
@@ -42,6 +67,7 @@ def tournament_view(attributes, identifier):
         "country": str(attributes.get("country") or "").strip()[:64],
         "startDate": str(attributes.get("startDate") or "")[:10],
         "endDate": str(attributes.get("endDate") or "")[:10],
+        "url": tournament_url(attributes.get("informationPage")),
     }
 
 
@@ -105,6 +131,8 @@ def main() -> int:
             "bestOf": max(0, min(99, int(attributes.get("numberOfFrames") or 0))),
             "home": player_name(attributes.get("homePlayer")),
             "away": player_name(attributes.get("awayPlayer")),
+            "homeUrl": player_url(attributes.get("homePlayer")),
+            "awayUrl": player_url(attributes.get("awayPlayer")),
             "homeScore": max(0, min(99, int(attributes.get("homePlayerScore") or 0))),
             "awayScore": max(0, min(99, int(attributes.get("awayPlayerScore") or 0))),
         })

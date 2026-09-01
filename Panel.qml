@@ -66,6 +66,12 @@ Panel {
     // Reassign so the bindings that read frame state see the update.
     schedule = Model.mergeLive(schedule, raw)
   }
+  function openLink(url) {
+    var target = Model.safeUrl(url)
+    if (!target) return
+    Qt.openUrlExternally(target)
+    close()
+  }
   function localDay(value) { return Qt.formatDateTime(value, "ddd").toUpperCase() }
   function localTime(value) { return Qt.formatDateTime(value, "HH:mm") }
   function dateRange(tournament) { return Model.dateRange(tournament, function(d, f) { return Qt.formatDate(d, f) }) }
@@ -167,9 +173,18 @@ Panel {
             Layout.fillWidth: true
             Layout.preferredHeight: Style.space(168)
             radius: Style.cornerRadius
-            color: root.baize
+            color: heroClick.containsMouse ? Qt.lighter(root.baize, 1.15) : root.baize
             clip: true
             visible: !!root.schedule.current
+
+            MouseArea {
+              id: heroClick
+              anchors.fill: parent
+              hoverEnabled: true
+              acceptedButtons: Qt.LeftButton
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.openLink(root.schedule.current ? root.schedule.current.url : "")
+            }
 
             // Six pockets on a cloth: a snooker motif without borrowed artwork.
             Item {
@@ -195,7 +210,7 @@ Panel {
               textFormat: Text.PlainText
               anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
               anchors.leftMargin: Style.space(18); anchors.rightMargin: Style.space(18); anchors.topMargin: Style.space(14)
-              text: "SNOOKER" + (root.schedule.round ? "  /  " + root.schedule.round.toUpperCase() : "")
+              text: "SNOOKER" + (root.schedule.round ? "  /  " + root.schedule.round.toUpperCase() : "") + "   ↗"
               color: "white"; font.family: root.bar.fontFamily
               font.pixelSize: Style.font.bodySmall; font.bold: true; font.letterSpacing: 1.5
               elide: Text.ElideRight
@@ -281,7 +296,17 @@ Panel {
                       text: modelData.home
                       horizontalAlignment: Text.AlignRight
                       color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.body
+                      font.underline: liveHome.containsMouse
                       elide: Text.ElideRight
+                      MouseArea {
+                        id: liveHome
+                        anchors.fill: parent
+                        hoverEnabled: !!modelData.homeUrl
+                        acceptedButtons: Qt.LeftButton
+                        enabled: !!modelData.homeUrl
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openLink(modelData.homeUrl)
+                      }
                     }
                     Text {
                       textFormat: Text.PlainText
@@ -293,7 +318,17 @@ Panel {
                       textFormat: Text.PlainText
                       text: modelData.away
                       color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.body
+                      font.underline: liveAway.containsMouse
                       elide: Text.ElideRight
+                      MouseArea {
+                        id: liveAway
+                        anchors.fill: parent
+                        hoverEnabled: !!modelData.awayUrl
+                        acceptedButtons: Qt.LeftButton
+                        enabled: !!modelData.awayUrl
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openLink(modelData.awayUrl)
+                      }
                     }
                   }
 
@@ -356,12 +391,49 @@ Panel {
                     text: modelData.start ? root.localTime(modelData.start) : "TBD"
                     color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true
                   }
-                  Text {
+                  RowLayout {
                     Layout.fillWidth: true
-                    textFormat: Text.PlainText
-                    text: modelData.home + "  vs  " + modelData.away
-                    color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall
-                    elide: Text.ElideRight
+                    spacing: Style.space(6)
+                    Text {
+                      Layout.fillWidth: true
+                      textFormat: Text.PlainText
+                      horizontalAlignment: Text.AlignRight
+                      text: modelData.home
+                      color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall
+                      font.underline: todayHome.containsMouse
+                      elide: Text.ElideRight
+                      MouseArea {
+                        id: todayHome
+                        anchors.fill: parent
+                        hoverEnabled: !!modelData.homeUrl
+                        acceptedButtons: Qt.LeftButton
+                        enabled: !!modelData.homeUrl
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openLink(modelData.homeUrl)
+                      }
+                    }
+                    Text {
+                      textFormat: Text.PlainText
+                      text: "vs"
+                      color: Qt.darker(root.bar.foreground, 1.7); font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+                    }
+                    Text {
+                      Layout.fillWidth: true
+                      textFormat: Text.PlainText
+                      text: modelData.away
+                      color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall
+                      font.underline: todayAway.containsMouse
+                      elide: Text.ElideRight
+                      MouseArea {
+                        id: todayAway
+                        anchors.fill: parent
+                        hoverEnabled: !!modelData.awayUrl
+                        acceptedButtons: Qt.LeftButton
+                        enabled: !!modelData.awayUrl
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openLink(modelData.awayUrl)
+                      }
+                    }
                   }
                   Text {
                     textFormat: Text.PlainText
@@ -402,7 +474,17 @@ Panel {
                   text: modelData.home
                   color: modelData.homeScore > modelData.awayScore ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.6)
                   font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+                  font.underline: resultHome.containsMouse
                   elide: Text.ElideRight
+                  MouseArea {
+                    id: resultHome
+                    anchors.fill: parent
+                    hoverEnabled: !!modelData.homeUrl
+                    acceptedButtons: Qt.LeftButton
+                    enabled: !!modelData.homeUrl
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openLink(modelData.homeUrl)
+                  }
                 }
                 Text {
                   textFormat: Text.PlainText
@@ -415,7 +497,17 @@ Panel {
                   text: modelData.away
                   color: modelData.awayScore > modelData.homeScore ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.6)
                   font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+                  font.underline: resultAway.containsMouse
                   elide: Text.ElideRight
+                  MouseArea {
+                    id: resultAway
+                    anchors.fill: parent
+                    hoverEnabled: !!modelData.awayUrl
+                    acceptedButtons: Qt.LeftButton
+                    enabled: !!modelData.awayUrl
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openLink(modelData.awayUrl)
+                  }
                 }
               }
             }
@@ -442,7 +534,17 @@ Panel {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Style.space(46)
                 radius: Style.cornerRadius
-                color: Qt.rgba(1, 1, 1, 0.035)
+                color: upcomingClick.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.035)
+
+                MouseArea {
+                  id: upcomingClick
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  acceptedButtons: Qt.LeftButton
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openLink(modelData.url)
+                }
+
                 RowLayout {
                   anchors.fill: parent; anchors.leftMargin: Style.space(12); anchors.rightMargin: Style.space(12)
                   spacing: Style.space(10)
@@ -494,7 +596,7 @@ Panel {
             Layout.fillWidth: true
             Text {
               textFormat: Text.PlainText
-              text: "Times shown locally · Data: World Snooker Tour"
+              text: "Local times · Click a player or event to open wst.tv"
               color: Qt.darker(root.bar.foreground, 1.6); font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
             }
             Item { Layout.fillWidth: true }

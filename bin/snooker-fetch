@@ -32,8 +32,8 @@ trap 'rm -rf "$work_dir"' EXIT
 
 agent="omarchy-snooker-calendar/1.0 (schedule widget; one refresh per ${refresh_hours}h)"
 get() {
-  curl -fsSL --compressed --connect-timeout 5 --max-time 20 \
-    --max-filesize "$2" --retry 1 --retry-delay 2 -A "$agent" "$1"
+  curl -fsSL --compressed --connect-timeout 10 --max-time 30 \
+    --max-filesize "$2" --retry 2 --retry-delay 2 -A "$agent" "$1"
 }
 
 tournaments_url="https://tournaments.snooker.web.gc.wstservices.co.uk/v2/?season=${season}"
