@@ -288,7 +288,7 @@ Panel {
                   hoverEnabled: true
                   acceptedButtons: Qt.LeftButton
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openLink(root.schedule.current ? root.schedule.current.url : "")
+                  onClicked: root.openLink(modelData.url || (root.schedule.current ? root.schedule.current.url : ""))
                 }
 
                 ColumnLayout {
@@ -400,7 +400,7 @@ Panel {
                   hoverEnabled: true
                   acceptedButtons: Qt.LeftButton
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openLink(root.schedule.current ? root.schedule.current.url : "")
+                  onClicked: root.openLink(modelData.url || (root.schedule.current ? root.schedule.current.url : ""))
                 }
 
                 RowLayout {

@@ -12,6 +12,14 @@ function safeUrl(value) {
   return text
 }
 
+var MATCH_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+function matchUrl(id) {
+  // wst.tv is a single-page app, but its match centre is one route the widget
+  // can address safely: the feed's own match UUID is the whole path.
+  return MATCH_ID.test(id) ? "https://www.wst.tv/match-centre/" + id : ""
+}
+
 function asDate(value) {
   if (!value) return null
   var parsed = new Date(String(value))
@@ -41,8 +49,10 @@ function normalizeMatch(raw) {
   var home = boundedText(raw.home, 48)
   var away = boundedText(raw.away, 48)
   if (!home && !away) return null
+  var id = boundedText(raw.id, 64)
   return {
-    id: boundedText(raw.id, 64),
+    id: id,
+    url: matchUrl(id),
     round: boundedText(raw.round, 48),
     start: asDate(raw.start),
     status: boundedText(raw.status, 24),

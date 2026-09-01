@@ -67,10 +67,11 @@ tournaments, so `bin/snooker-build` reduces it to the running event before
 anything is cached — about 12 KB on disk. Live scores are requested for every
 in-play match in one batched GraphQL call.
 
-Clicking a tournament, match, or player name opens the matching page on
-snooker.org. wst.tv is a single-page app that returns the same shell for every
-route — including routes that do not exist — so its links cannot be verified and
-are not used. snooker.org is server-rendered with stable numeric IDs, but keys on
+Clicking a match opens its live match centre on wst.tv, whose route is simply the
+match UUID the feed already carries. Tournaments and player names open the
+matching page on snooker.org instead: wst.tv is a single-page app that returns the
+same shell for every route — including routes that do not exist — so a guessed
+slug cannot be verified. snooker.org is server-rendered with stable numeric IDs, but keys on
 its own IDs rather than the WST UUIDs, so `bin/snooker-links` matches events on
 their dates and players on their names. Name matching runs in tiers: exact, then
 a diacritic fold (`Nüßle` / `Nuessle`), then dropping middle initials
