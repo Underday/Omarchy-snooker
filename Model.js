@@ -11,8 +11,10 @@ function asDate(value) {
 
 function normalizeTournament(raw) {
   if (!raw) return null
-  var start = asDate(String(raw.startDate || "") + "T00:00:00Z")
-  var end = asDate(String(raw.endDate || "") + "T23:59:59Z")
+  // Tournament bounds are calendar days, not instants: parse them as local
+  // midnight so a UTC end date cannot roll into the following day on display.
+  var start = asDate(String(raw.startDate || "") + "T00:00:00")
+  var end = asDate(String(raw.endDate || "") + "T23:59:59")
   if (!start || !end) return null
   return {
     id: boundedText(raw.id, 64),
@@ -113,16 +115,29 @@ function mergeLive(schedule, raw) {
   }
   if (!scores || typeof scores !== "object") return schedule
 
+  // Rebuild rather than mutate: assigning the same object back to a QML
+  // property emits no change signal, so the frame scores would never render.
+  var live = []
   for (var i = 0; i < schedule.live.length; i++) {
     var match = schedule.live[i]
     var update = scores[match.id]
-    if (!update) continue
-    match.homeScore = Math.max(0, Math.min(99, Number(update.home || 0) || 0))
-    match.awayScore = Math.max(0, Math.min(99, Number(update.away || 0) || 0))
-    match.meta = boundedText(update.meta, 24)
-    match.frames = Array.isArray(update.frames) ? update.frames.slice(-12) : []
+    if (!update) {
+      live.push(match)
+      continue
+    }
+    var merged = {}
+    for (var key in match) merged[key] = match[key]
+    merged.homeScore = Math.max(0, Math.min(99, Number(update.home || 0) || 0))
+    merged.awayScore = Math.max(0, Math.min(99, Number(update.away || 0) || 0))
+    merged.meta = boundedText(update.meta, 24)
+    merged.frames = Array.isArray(update.frames) ? update.frames.slice(-12) : []
+    live.push(merged)
   }
-  return schedule
+
+  var next = {}
+  for (var field in schedule) next[field] = schedule[field]
+  next.live = live
+  return next
 }
 
 function frameLine(match) {
@@ -166,6 +181,15 @@ function countdown(target, now, compact, includeSeconds) {
     return includeSeconds ? value + " " + pad(seconds) + "S" : value
   }
   return "T− " + pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
+}
+
+function startLabel(match, now) {
+  // A scheduled match whose slot has passed is waiting on the table before it,
+  // so say that rather than claiming it is under way.
+  if (!match || !match.start) return "TBD"
+  var current = now instanceof Date ? now.getTime() : Number(now || Date.now())
+  if (match.start.getTime() <= current) return "NEXT UP"
+  return countdown(match.start, current, true)
 }
 
 function dateRange(tournament, formatter) {

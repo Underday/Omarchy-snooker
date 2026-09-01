@@ -365,7 +365,7 @@ Panel {
                   }
                   Text {
                     textFormat: Text.PlainText
-                    text: modelData.start ? Model.countdown(modelData.start, root.clock, true) : ""
+                    text: Model.startLabel(modelData, root.clock)
                     color: Qt.darker(root.bar.foreground, 1.5); font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
                   }
                 }
