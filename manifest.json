@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "underday.snooker-calendar",
   "name": "Snooker Calendar",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "underday",
   "license": "MIT",
   "description": "The current World Snooker Tour event with live frame scores, today's matches, and the tournaments that follow.",
