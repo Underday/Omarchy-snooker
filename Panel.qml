@@ -24,10 +24,15 @@ Panel {
   property bool refreshing: false
   property bool openedFromHotkey: false
   readonly property int refreshHours: Math.max(3, Math.min(24, Number(setting("refreshHours", 6)) || 6))
+  readonly property int matchDayMinutes: Math.max(5, Math.min(60, Number(setting("matchDayMinutes", 5)) || 5))
   readonly property int liveSeconds: Math.max(20, Math.min(300, Number(setting("liveSeconds", 45)) || 45))
   readonly property string fetchScript: Qt.resolvedUrl("bin/snooker-fetch").toString().replace(/^file:\/\//, "")
   readonly property string liveScript: Qt.resolvedUrl("bin/snooker-live").toString().replace(/^file:\/\//, "")
   readonly property bool hasLive: !!schedule.live && schedule.live.length > 0
+  // A tournament being played needs its own cadence: the six-hour calendar
+  // timer would otherwise hold a morning snapshot all day, and because that
+  // snapshot lists nobody as live the live poll never starts either.
+  readonly property bool matchDay: schedule.ok === true && schedule.running === true
   readonly property string barLabel: "🎱"
   readonly property string tooltip: schedule.current ? schedule.current.name : "Snooker Calendar"
 
@@ -42,7 +47,8 @@ Panel {
   function refresh(force) {
     if (fetchProcess.running) return
     refreshing = true
-    fetchProcess.command = force === true ? [fetchScript, "--force", String(refreshHours)] : [fetchScript, "", String(refreshHours)]
+    var cadence = [String(refreshHours), matchDay ? String(matchDayMinutes) : "0"]
+    fetchProcess.command = [fetchScript, force === true ? "--force" : ""].concat(cadence)
     fetchProcess.running = true
   }
   function refreshLive() {
@@ -94,6 +100,12 @@ Panel {
   Timer {
     interval: root.refreshHours * 60 * 60 * 1000
     running: true
+    repeat: true
+    onTriggered: root.refresh(false)
+  }
+  Timer {
+    interval: root.matchDayMinutes * 60 * 1000
+    running: root.matchDay
     repeat: true
     onTriggered: root.refresh(false)
   }

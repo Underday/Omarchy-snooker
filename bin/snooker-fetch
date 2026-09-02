@@ -3,9 +3,16 @@ set -uo pipefail
 
 force="${1:-}"
 refresh_hours="${2:-6}"
+refresh_minutes="${3:-}"
 
 case "$refresh_hours" in (*[!0-9]*|'') refresh_hours=6;; esac
 (( refresh_hours < 3 )) && refresh_hours=3
+
+# While an event is actually being played the six-hour calendar cadence leaves
+# the widget showing a morning snapshot all afternoon, so a running tournament
+# may ask for minutes instead. Five is the floor: the feeds are shared.
+case "$refresh_minutes" in (*[!0-9]*|'') refresh_minutes=0;; esac
+(( refresh_minutes > 0 && refresh_minutes < 5 )) && refresh_minutes=5
 
 # A World Snooker Tour season runs June through May, so it is named for its
 # opening calendar year.
@@ -21,7 +28,13 @@ cache_file="${cache_root}/${season}.json"
 cache_reader="${here}/snooker-cache-read"
 cache_dir="${here}/snooker-cache-dir"
 builder="${here}/snooker-build"
-max_age=$((refresh_hours * 3600))
+if (( refresh_minutes > 0 )); then
+  max_age=$((refresh_minutes * 60))
+  cadence="${refresh_minutes}m"
+else
+  max_age=$((refresh_hours * 3600))
+  cadence="${refresh_hours}h"
+fi
 
 # Everything below trusts this directory, so refuse to run until it is a real,
 # owner-private directory rather than a link something else can redirect.
@@ -34,7 +47,7 @@ fi
 work_dir="$(mktemp -d "${cache_root}/build.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 
-agent="omarchy-snooker-calendar/1.0 (schedule widget; one refresh per ${refresh_hours}h)"
+agent="omarchy-snooker-calendar/1.0 (schedule widget; one refresh per ${cadence})"
 get() {
   curl -fsSL --compressed --connect-timeout 10 --max-time 30 \
     --proto '=https' --proto-redir '=https' --max-filesize "$2" --retry 2 --retry-delay 2 -A "$agent" "$1"
