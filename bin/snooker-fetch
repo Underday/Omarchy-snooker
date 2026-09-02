@@ -19,9 +19,13 @@ here="$(dirname "$0")"
 cache_root="${XDG_CACHE_HOME:-${HOME}/.cache}/omarchy/snooker-calendar"
 cache_file="${cache_root}/${season}.json"
 cache_reader="${here}/snooker-cache-read"
+cache_dir="${here}/snooker-cache-dir"
 builder="${here}/snooker-build"
 max_age=$((refresh_hours * 3600))
-mkdir -p "$cache_root"
+
+# Everything below trusts this directory, so refuse to run until it is a real,
+# owner-private directory rather than a link something else can redirect.
+"$cache_dir" "$cache_root" || exit 1
 
 if [[ "$force" != "--force" ]] && "$cache_reader" --max-age "$max_age" "$cache_file"; then
   exit 0
@@ -33,7 +37,7 @@ trap 'rm -rf "$work_dir"' EXIT
 agent="omarchy-snooker-calendar/1.0 (schedule widget; one refresh per ${refresh_hours}h)"
 get() {
   curl -fsSL --compressed --connect-timeout 10 --max-time 30 \
-    --max-filesize "$2" --retry 2 --retry-delay 2 -A "$agent" "$1"
+    --proto '=https' --proto-redir '=https' --max-filesize "$2" --retry 2 --retry-delay 2 -A "$agent" "$1"
 }
 
 tournaments_url="https://tournaments.snooker.web.gc.wstservices.co.uk/v2/?season=${season}"
@@ -48,11 +52,11 @@ stale() { [[ ! -s "$1" ]] || [[ -n "$(find "$1" -maxdepth 0 -mmin "+$2" 2>/dev/n
 
 if stale "$players_cache" 10080; then
   get "https://players.snooker.org/" $((2 * 1024 * 1024)) >"${work_dir}/players.html" \
-    && [[ -s "${work_dir}/players.html" ]] && mv -- "${work_dir}/players.html" "$players_cache"
+    && "$cache_dir" --install "${work_dir}/players.html" players.html "$cache_root"
 fi
 if stale "$calendar_cache" 720; then
   get "https://www.snooker.org/res/index.asp?template=2&season=${season}" $((1024 * 1024)) >"${work_dir}/calendar.html" \
-    && [[ -s "${work_dir}/calendar.html" ]] && mv -- "${work_dir}/calendar.html" "$calendar_cache"
+    && "$cache_dir" --install "${work_dir}/calendar.html" "calendar-${season}.html" "$cache_root"
 fi
 
 if get "$tournaments_url" $((256 * 1024)) >"${work_dir}/tournaments.json" \
@@ -61,10 +65,11 @@ if get "$tournaments_url" $((256 * 1024)) >"${work_dir}/tournaments.json" \
        --today "$today" --season "$season" \
        --players "$players_cache" --calendar "$calendar_cache" >"${work_dir}/payload.json" \
   && "$cache_reader" --check "${work_dir}/payload.json"; then
-  mv -- "${work_dir}/payload.json" "$cache_file"
-  rm -rf "$work_dir"
-  trap - EXIT
-  exec "$cache_reader" "$cache_file"
+  if "$cache_dir" --install "${work_dir}/payload.json" "${season}.json" "$cache_root"; then
+    rm -rf "$work_dir"
+    trap - EXIT
+    exec "$cache_reader" "$cache_file"
+  fi
 fi
 
 rm -rf "$work_dir"

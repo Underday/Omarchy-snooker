@@ -13,10 +13,20 @@ import json
 import os
 import sys
 
-_loader = importlib.machinery.SourceFileLoader(
-    "snooker_links", os.path.join(os.path.dirname(os.path.abspath(__file__)), "snooker-links"))
-links = importlib.util.module_from_spec(importlib.util.spec_from_loader("snooker_links", _loader))
-_loader.exec_module(links)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _sibling(name, module):
+    loader = importlib.machinery.SourceFileLoader(module, os.path.join(_HERE, name))
+    found = importlib.util.module_from_spec(importlib.util.spec_from_loader(module, loader))
+    loader.exec_module(found)
+    return found
+
+
+links = _sibling("snooker-links", "snooker_links")
+cache = _sibling("snooker-cache-dir", "snooker_cache_dir")
+
+MAX_HTML_BYTES = 2 * 1024 * 1024
 
 MAX_UPCOMING_TOURNAMENTS = 6
 MAX_MATCHES = 40
@@ -31,13 +41,25 @@ def player_name(player):
 
 
 def read_optional(path):
+    """Link sources are optional, so an unusable one costs links and nothing else.
+
+    The cache directory is opened and checked first, then the file is read
+    through that descriptor: a swapped parent or a link left in place cannot
+    redirect the read, and the size cap keeps a replacement from being slurped
+    whole regardless of what the download limit allowed.
+    """
     if not path:
         return ""
+    parent, name = os.path.split(os.path.abspath(path))
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            return handle.read()
+        dir_fd = cache.open_dir(parent)
     except OSError:
         return ""
+    try:
+        payload = cache.read_file(dir_fd, name, MAX_HTML_BYTES)
+    finally:
+        os.close(dir_fd)
+    return payload.decode("utf-8", errors="replace")
 
 
 def as_utc(value):
