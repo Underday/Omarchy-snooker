@@ -54,7 +54,10 @@ get() {
 }
 
 tournaments_url="https://tournaments.snooker.web.gc.wstservices.co.uk/v2/?season=${season}"
-matches_url="https://matches.snooker.web.gc.wstservices.co.uk/v2/"
+# The matches feed defaults to the 100 oldest rows of an 8,900-match archive,
+# which never includes the tournament being played. Ask for the newest page
+# instead, wide enough to cover the running event and the fixtures after it.
+matches_url="https://matches.snooker.web.gc.wstservices.co.uk/v2/?page.size=500&order=desc"
 
 # snooker.org supplies the page IDs the widget links to. Its player roster and
 # season calendar move far more slowly than scores, so they get their own long
@@ -73,7 +76,7 @@ if stale "$calendar_cache" 720; then
 fi
 
 if get "$tournaments_url" $((256 * 1024)) >"${work_dir}/tournaments.json" \
-  && get "$matches_url" $((1024 * 1024)) >"${work_dir}/matches.json" \
+  && get "$matches_url" $((4 * 1024 * 1024)) >"${work_dir}/matches.json" \
   && "$builder" "${work_dir}/tournaments.json" "${work_dir}/matches.json" \
        --today "$today" --season "$season" \
        --players "$players_cache" --calendar "$calendar_cache" >"${work_dir}/payload.json" \
