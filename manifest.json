@@ -19,7 +19,8 @@
     "defaultSection": "center",
     "defaults": {
       "refreshHours": 6,
-      "liveSeconds": 45
+      "liveSeconds": 45,
+      "reminderMinutes": 15
     },
     "schema": [
       {
@@ -30,6 +31,15 @@
         "max": 24,
         "step": 1,
         "defaultValue": 6
+      },
+      {
+        "key": "reminderMinutes",
+        "type": "integer",
+        "label": "Match reminder lead time (minutes before the start)",
+        "min": 1,
+        "max": 120,
+        "step": 1,
+        "defaultValue": 15
       },
       {
         "key": "liveSeconds",

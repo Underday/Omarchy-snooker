@@ -10,6 +10,8 @@ your local zone.
 - The current (or next) ranking event with venue, dates, and a live `T−` countdown
 - Live matches with frame score, per-frame points, best-of, and in-play state
 - Today's remaining order of play, with a countdown to each match
+- Per-match reminders as desktop notifications: before the start, when the
+  match goes live, and with the closing score
 - Latest completed results from the running event
 - The next six tournaments on tour
 - Offline cache and a respectful six-hour schedule refresh
@@ -31,8 +33,15 @@ omarchy plugin add "$(pwd)" --enable
 
 - Left-click the 🎱 to open or close the calendar.
 - Middle-click it to force a schedule refresh.
+- Click the 🔔 beside a match to set or clear a reminder for it.
 - Press `R` while the panel is open to refresh.
 - Press `Escape` to close the panel.
+
+Reminders arrive as desktop notifications through `notify-send` (from
+`libnotify`), which Omarchy already installs. Each match you ring gets up to
+three: one a configurable 15 minutes before the start, one when it actually goes
+live, and one with the final score. The reminder list is kept in the cache
+directory and survives a restart; entries clear themselves a day after the match.
 
 The schedule refresh interval defaults to six hours (3–24 configurable). While
 the panel is open and a match is live, frame scores refresh every 45 seconds

@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Keep the per-match reminder list and raise the desktop notifications for it.
+
+The widget decides *when* a reminder is due — it already holds the clock and the
+schedule — so this script only owns the two things QML cannot: a small state
+file that survives a restart, and the call out to notify-send. Every invocation
+prints the surviving reminder set so the panel can resynchronise from it.
+"""
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _sibling(name, module):
+    loader = importlib.machinery.SourceFileLoader(module, os.path.join(_HERE, name))
+    found = importlib.util.module_from_spec(importlib.util.spec_from_loader(module, loader))
+    loader.exec_module(found)
+    return found
+
+
+cache = _sibling("snooker-cache-dir", "snooker_cache_dir")
+
+STATE_NAME = "reminders.json"
+MAX_BYTES = 64 * 1024
+MAX_ITEMS = 64
+MAX_TEXT = 160
+# A reminder outlives its match by a day so the closing result can still land,
+# then stops being anyone's business.
+GRACE_SECONDS = 24 * 60 * 60
+UUID = re.compile(r"\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
+STAGES = ("pre", "live", "done")
+URGENCY = {"pre": "normal", "live": "critical", "done": "low"}
+
+
+def state_path():
+    root = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(root, "omarchy", "snooker-calendar")
+
+
+def load(dir_fd):
+    """The stored reminders, dropping anything malformed or expired."""
+    raw = cache.read_file(dir_fd, STATE_NAME, MAX_BYTES)
+    try:
+        data = json.loads(raw.decode("utf-8", "replace")) if raw else {}
+    except ValueError:
+        return {}
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, dict):
+        return {}
+
+    now = time.time()
+    clean = {}
+    for match_id, entry in list(items.items())[:MAX_ITEMS]:
+        if not UUID.match(str(match_id)) or not isinstance(entry, dict):
+            continue
+        try:
+            expires = float(entry.get("expires") or 0)
+        except (TypeError, ValueError):
+            continue
+        if expires and expires < now:
+            continue
+        fired = entry.get("fired")
+        clean[match_id] = {
+            "expires": expires,
+            "fired": [stage for stage in STAGES if isinstance(fired, list) and stage in fired],
+        }
+    return clean
+
+
+def save(dir_fd, items):
+    """Replace the state file atomically; a failed write leaves the old one."""
+    payload = json.dumps({"version": 1, "items": items}, separators=(",", ":")).encode("utf-8")
+    if len(payload) > MAX_BYTES:
+        return
+    temp = f".{STATE_NAME}.new"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(temp, flags, 0o600, dir_fd=dir_fd)
+    try:
+        view = memoryview(payload)
+        while view:
+            view = view[os.write(fd, view):]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        os.replace(temp, STATE_NAME, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+    except OSError:
+        os.unlink(temp, dir_fd=dir_fd)
+
+
+def notify(title, body, stage):
+    """Hand the reminder to the desktop; a missing notify-send is not fatal."""
+    binary = shutil.which("notify-send")
+    if not binary:
+        print("notify-send is not installed", file=sys.stderr)
+        return False
+    command = [
+        binary,
+        "--app-name=Snooker Calendar",
+        "--icon=applications-games",
+        f"--urgency={URGENCY.get(stage, 'normal')}",
+        "--",
+        title[:MAX_TEXT] or "Snooker",
+        body[:MAX_TEXT],
+    ]
+    try:
+        subprocess.run(command, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"notification failed: {error}", file=sys.stderr)
+        return False
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("action", choices=("list", "toggle", "clear", "fire"))
+    parser.add_argument("match", nargs="?", default="")
+    parser.add_argument("--expires", type=float, default=0.0)
+    parser.add_argument("--stage", choices=STAGES, default="pre")
+    parser.add_argument("--title", default="")
+    parser.add_argument("--body", default="")
+    args = parser.parse_args()
+
+    try:
+        dir_fd = cache.open_dir(state_path(), create=True)
+    except OSError as error:
+        print(f"unusable cache directory: {error}", file=sys.stderr)
+        return 1
+
+    try:
+        items = load(dir_fd)
+        changed = False
+
+        if args.action != "list":
+            if not UUID.match(args.match):
+                print("not a match id", file=sys.stderr)
+                return 1
+
+        if args.action == "toggle":
+            if args.match in items:
+                del items[args.match]
+            elif len(items) < MAX_ITEMS:
+                items[args.match] = {"expires": max(0.0, args.expires), "fired": []}
+            else:
+                print("too many reminders already set", file=sys.stderr)
+                return 1
+            changed = True
+        elif args.action == "clear":
+            changed = items.pop(args.match, None) is not None
+        elif args.action == "fire":
+            entry = items.get(args.match)
+            if entry and args.stage not in entry["fired"]:
+                # Record first: a notification daemon that is slow or absent must
+                # not leave the stage armed to fire again on the next tick.
+                entry["fired"].append(args.stage)
+                changed = True
+                save(dir_fd, items)
+                notify(args.title, args.body, args.stage)
+                changed = False
+
+        if changed:
+            save(dir_fd, items)
+
+        json.dump(items, sys.stdout, separators=(",", ":"))
+        sys.stdout.write("\n")
+        return 0
+    except OSError as error:
+        print(f"reminder store failed: {error}", file=sys.stderr)
+        return 1
+    finally:
+        os.close(dir_fd)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
